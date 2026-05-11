@@ -1,0 +1,123 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import PageContainer from '@/components/PageContainer.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { listProductsForReview, reviewProduct } from '@/api/products'
+import type { Product } from '@/types/api'
+import { formatAmount, formatTime } from '@/utils/format'
+
+const loading = ref(false)
+const list = ref<Product[]>([])
+const total = ref(0)
+const query = reactive({ page: 1, page_size: 10 })
+
+const dialogVisible = ref(false)
+const current = ref<Product | null>(null)
+const reviewForm = reactive({ action: 1, remark: '' })
+const reviewRef = ref<FormInstance>()
+const submitting = ref(false)
+const rules: FormRules = {
+  action: [{ required: true, message: '请选择审核结果', trigger: 'change' }],
+}
+
+async function fetchList() {
+  loading.value = true
+  try {
+    const resp = await listProductsForReview({ page: query.page, page_size: query.page_size })
+    list.value = resp.products ?? []
+    total.value = resp.total ?? 0
+  } catch {
+    list.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+function openReview(row: Product) {
+  current.value = row
+  Object.assign(reviewForm, { action: 1, remark: '' })
+  dialogVisible.value = true
+}
+
+async function submitReview() {
+  if (!current.value || !reviewRef.value) return
+  const ok = await reviewRef.value.validate().catch(() => false)
+  if (!ok) return
+  submitting.value = true
+  try {
+    await reviewProduct(current.value.id, { ...reviewForm })
+    ElMessage.success('已提交')
+    dialogVisible.value = false
+    fetchList()
+  } finally {
+    submitting.value = false
+  }
+}
+
+onMounted(fetchList)
+</script>
+
+<template>
+  <PageContainer title="商品审核">
+    <el-form inline>
+      <el-form-item>
+        <el-button type="primary" @click="fetchList">查询</el-button>
+        <el-button @click="fetchList">重置</el-button>
+      </el-form-item>
+    </el-form>
+
+    <el-table v-loading="loading" :data="list" border stripe>
+      <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column prop="name" label="商品名" />
+      <el-table-column prop="shopId" label="店铺 ID" width="100" />
+      <el-table-column label="价格" width="120">
+        <template #default="{ row }">{{ formatAmount(row.price) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">
+          <StatusTag :status="row.status" />
+        </template>
+      </el-table-column>
+      <el-table-column label="创建时间" width="180">
+        <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="{ row }">
+          <el-button size="small" type="primary" @click="openReview(row)">审核</el-button>
+        </template>
+      </el-table-column>
+      <template #empty><el-empty description="暂无数据" /></template>
+    </el-table>
+
+    <div style="margin-top: 16px; text-align: right">
+      <el-pagination
+        v-model:current-page="query.page"
+        v-model:page-size="query.page_size"
+        :total="total"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        @current-change="fetchList"
+        @size-change="fetchList"
+      />
+    </div>
+
+    <el-dialog v-model="dialogVisible" title="商品审核" width="480px">
+      <el-form ref="reviewRef" :model="reviewForm" :rules="rules" label-width="80px">
+        <el-form-item label="审核结果" prop="action">
+          <el-radio-group v-model="reviewForm.action">
+            <el-radio :value="1">通过</el-radio>
+            <el-radio :value="2">驳回</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="reviewForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitReview">提交</el-button>
+      </template>
+    </el-dialog>
+  </PageContainer>
+</template>
