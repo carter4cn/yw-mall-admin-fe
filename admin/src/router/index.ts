@@ -108,6 +108,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/sensitive-words/index.vue'),
         meta: { title: '敏感词库', icon: 'Filter', group: '风控' },
       },
+      // 财务
+      {
+        path: 'ledger',
+        name: 'Ledger',
+        component: () => import('@/views/ledger/index.vue'),
+        meta: { title: '账本流水', icon: 'Notebook', group: '财务' },
+      },
       // 系统
       {
         path: 'accounts',
