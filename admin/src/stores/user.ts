@@ -1,12 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import type { LoginRequest, LoginResponse } from '@/types/api'
-import { login as loginApi } from '@/api/auth'
+import { login as loginApi, logout as logoutApi } from '@/api/auth'
 
 const STORAGE_KEY = 'yw-mall-admin-user'
 
 interface PersistedState {
-  token: string
+  accessToken: string
+  refreshToken: string
+  csrfToken: string
+  expiresAt: number
   uid: number
   username: string
   role: string
@@ -24,10 +27,25 @@ function loadFromStorage(): PersistedState | null {
   }
 }
 
+interface SessionPayload {
+  accessToken: string
+  refreshToken: string
+  csrfToken: string
+  expiresIn: number
+  uid?: number
+  username?: string
+  role?: string
+  perms?: string[]
+  shopId?: number
+}
+
 export const useUserStore = defineStore('user', () => {
   const persisted = loadFromStorage()
 
-  const token = ref<string>(persisted?.token ?? '')
+  const accessToken = ref<string>(persisted?.accessToken ?? '')
+  const refreshToken = ref<string>(persisted?.refreshToken ?? '')
+  const csrfToken = ref<string>(persisted?.csrfToken ?? '')
+  const expiresAt = ref<number>(persisted?.expiresAt ?? 0)
   const uid = ref<number>(persisted?.uid ?? 0)
   const username = ref<string>(persisted?.username ?? '')
   const role = ref<string>(persisted?.role ?? '')
@@ -36,7 +54,10 @@ export const useUserStore = defineStore('user', () => {
 
   function persist() {
     const state: PersistedState = {
-      token: token.value,
+      accessToken: accessToken.value,
+      refreshToken: refreshToken.value,
+      csrfToken: csrfToken.value,
+      expiresAt: expiresAt.value,
       uid: uid.value,
       username: username.value,
       role: role.value,
@@ -46,32 +67,69 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
 
-  watch([token, uid, username, role, perms, shopId], () => {
-    if (token.value) {
-      persist()
-    }
-  }, { deep: true })
+  watch(
+    [accessToken, refreshToken, csrfToken, expiresAt, uid, username, role, perms, shopId],
+    () => {
+      if (accessToken.value) {
+        persist()
+      }
+    },
+    { deep: true },
+  )
+
+  // setSession is called after login and after a successful refresh; only the
+  // token-shaped fields are mandatory, identity fields are kept across rotations.
+  function setSession(payload: SessionPayload) {
+    accessToken.value = payload.accessToken
+    refreshToken.value = payload.refreshToken
+    csrfToken.value = payload.csrfToken
+    expiresAt.value = Date.now() + payload.expiresIn * 1000
+    if (payload.uid !== undefined) uid.value = payload.uid
+    if (payload.username !== undefined) username.value = payload.username
+    if (payload.role !== undefined) role.value = payload.role
+    if (payload.perms !== undefined) perms.value = payload.perms
+    if (payload.shopId !== undefined) shopId.value = payload.shopId
+    persist()
+  }
 
   async function login(req: LoginRequest): Promise<LoginResponse> {
     const resp = await loginApi(req)
-    token.value = resp.token
-    uid.value = resp.uid
-    role.value = resp.role
-    perms.value = resp.perms ?? []
-    shopId.value = resp.shopId ?? 0
-    username.value = resp.username ?? req.username
-    persist()
+    setSession({
+      accessToken: resp.token,
+      refreshToken: resp.refreshToken,
+      csrfToken: resp.csrfToken,
+      expiresIn: resp.expiresIn,
+      uid: resp.uid ?? resp.id ?? 0,
+      role: resp.role,
+      perms: resp.perms ?? resp.permissions ?? [],
+      shopId: resp.shopId ?? 0,
+      username: resp.username ?? req.username,
+    })
     return resp
   }
 
-  function logout() {
-    token.value = ''
+  function clear() {
+    accessToken.value = ''
+    refreshToken.value = ''
+    csrfToken.value = ''
+    expiresAt.value = 0
     uid.value = 0
     username.value = ''
     role.value = ''
     perms.value = []
     shopId.value = 0
     localStorage.removeItem(STORAGE_KEY)
+  }
+
+  async function logout() {
+    if (accessToken.value) {
+      try {
+        await logoutApi()
+      } catch {
+        // best-effort, server may already be down or token already gone
+      }
+    }
+    clear()
   }
 
   function hasPerm(p: string): boolean {
@@ -81,14 +139,21 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    token,
+    // legacy alias for components that still read `token`
+    token: accessToken,
+    accessToken,
+    refreshToken,
+    csrfToken,
+    expiresAt,
     uid,
     username,
     role,
     perms,
     shopId,
+    setSession,
     login,
     logout,
+    clear,
     hasPerm,
   }
 })

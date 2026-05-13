@@ -63,9 +63,9 @@ const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => (route.meta?.title as string) ?? '')
 const currentGroup = computed(() => (route.meta?.group as string) ?? '')
 
-function handleCommand(cmd: string) {
+async function handleCommand(cmd: string) {
   if (cmd === 'logout') {
-    userStore.logout()
+    await userStore.logout()
     router.push('/login')
   }
 }

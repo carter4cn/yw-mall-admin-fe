@@ -20,11 +20,25 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   token: string
-  uid: number
+  refreshToken: string
+  expiresIn: number
+  csrfToken: string
+  // backend returns `id` (snake-case `id`), the FE used to call it `uid`;
+  // accept both so refresh-then-relogin reuses the same store shape.
+  uid?: number
+  id?: number
   role: string
   shopId?: number
-  perms: string[]
+  perms?: string[]
+  permissions?: string[]
   username?: string
+}
+
+export interface RefreshResponse {
+  token: string
+  refreshToken: string
+  expiresIn: number
+  csrfToken: string
 }
 
 export interface ReviewRequest {

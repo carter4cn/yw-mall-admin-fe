@@ -1,17 +1,55 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 
 const STORAGE_KEY = 'yw-mall-admin-user'
 
-function readToken(): string | null {
+interface PersistedShape {
+  accessToken?: string
+  refreshToken?: string
+  csrfToken?: string
+  // legacy `token` from the JWT era — still supported for one upgrade cycle
+  token?: string
+}
+
+function readPersisted(): PersistedShape {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return parsed?.token ?? null
+    if (!raw) return {}
+    return JSON.parse(raw) as PersistedShape
   } catch {
-    return null
+    return {}
   }
+}
+
+function readAccessToken(): string | null {
+  const p = readPersisted()
+  return p.accessToken || p.token || null
+}
+
+function readRefreshToken(): string | null {
+  const p = readPersisted()
+  return p.refreshToken || null
+}
+
+function readCsrfToken(): string | null {
+  const p = readPersisted()
+  return p.csrfToken || null
+}
+
+function writeSession(payload: { accessToken: string; refreshToken: string; csrfToken: string; expiresIn: number }) {
+  // Re-read & merge so we don't clobber identity fields written by the user store.
+  let merged: Record<string, unknown> = {}
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) merged = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    // ignore
+  }
+  merged.accessToken = payload.accessToken
+  merged.refreshToken = payload.refreshToken
+  merged.csrfToken = payload.csrfToken
+  merged.expiresAt = Date.now() + payload.expiresIn * 1000
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
 }
 
 const request: AxiosInstance = axios.create({
@@ -19,19 +57,78 @@ const request: AxiosInstance = axios.create({
   timeout: 15000,
 })
 
-request.interceptors.request.use((config) => {
-  const token = readToken()
+const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH'])
+
+request.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = readAccessToken()
   if (token) {
     config.headers = config.headers ?? {}
     config.headers.Authorization = `Bearer ${token}`
   }
+  // Double-submit CSRF on writes when we have a bound csrf token.
+  const method = (config.method ?? 'get').toUpperCase()
+  if (WRITE_METHODS.has(method)) {
+    const csrf = readCsrfToken()
+    if (csrf) {
+      config.headers = config.headers ?? {}
+      ;(config.headers as Record<string, string>)['X-CSRF-Token'] = csrf
+    }
+  }
   return config
 })
+
+interface RefreshRespBody {
+  token: string
+  refreshToken: string
+  expiresIn: number
+  csrfToken: string
+  data?: RefreshRespBody
+}
+
+// Single in-flight refresh promise so a burst of 401s doesn't kick off
+// multiple refreshes which would invalidate each other on the server side.
+let refreshing: Promise<boolean> | null = null
+
+function callRefresh(): Promise<boolean> {
+  if (refreshing) return refreshing
+  refreshing = new Promise<boolean>((resolve) => {
+    const rt = readRefreshToken()
+    if (!rt) {
+      resolve(false)
+      return
+    }
+    axios
+      .post<RefreshRespBody>('/admin/v1/refresh', { refreshToken: rt }, { timeout: 15000 })
+      .then((res) => {
+        // The same code/data wrapper unwrap we do in the response interceptor.
+        let body = res.data as RefreshRespBody
+        if (body && body.data) body = body.data
+        if (body && body.token && body.refreshToken) {
+          writeSession({
+            accessToken: body.token,
+            refreshToken: body.refreshToken,
+            csrfToken: body.csrfToken,
+            expiresIn: body.expiresIn,
+          })
+          resolve(true)
+        } else {
+          resolve(false)
+        }
+      })
+      .catch(() => resolve(false))
+  }).finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
+interface RetriableConfig extends AxiosRequestConfig {
+  _retried?: boolean
+}
 
 request.interceptors.response.use(
   (resp) => {
     const body = resp.data
-    // 401 surfaces here normally as an HTTP 200 with code? Backend may use both:
     if (body && typeof body === 'object' && 'code' in body) {
       const code = (body as { code: number }).code
       if (code !== 0) {
@@ -39,14 +136,27 @@ request.interceptors.response.use(
         ElMessage.error(message)
         return Promise.reject(new Error(message))
       }
-      // Return the entire body so callers can access flattened list fields
       return body
     }
     return body
   },
-  (error) => {
+  async (error) => {
     const status = error?.response?.status
-    if (status === 401) {
+    const cfg = (error?.config ?? {}) as RetriableConfig
+    if (status === 401 && !cfg._retried) {
+      // Don't try to refresh on the refresh endpoint itself or login.
+      const url: string = (cfg.url ?? '').toString()
+      if (!url.endsWith('/refresh') && !url.endsWith('/login')) {
+        const ok = await callRefresh()
+        if (ok) {
+          cfg._retried = true
+          // Force a fresh Authorization header (instance interceptor will re-add).
+          if (cfg.headers) {
+            delete (cfg.headers as Record<string, string>).Authorization
+          }
+          return request(cfg)
+        }
+      }
       localStorage.removeItem(STORAGE_KEY)
       if (location.pathname !== '/login') {
         location.href = '/login'
