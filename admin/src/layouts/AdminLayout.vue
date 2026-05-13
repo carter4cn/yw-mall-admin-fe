@@ -30,6 +30,7 @@ const groups: { name: string; items: MenuItem[] }[] = [
     items: [
       { path: '/review-delete', title: '评论删除', icon: 'ChatLineSquare' },
       { path: '/complaints', title: '投诉处理', icon: 'Warning' },
+      { path: '/refund-requests', title: '退款仲裁', icon: 'Refresh' },
     ],
   },
   {

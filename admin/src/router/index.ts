@@ -64,6 +64,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/complaints/index.vue'),
         meta: { title: '投诉处理', icon: 'Warning', group: '客服' },
       },
+      {
+        path: 'refund-requests',
+        name: 'RefundRequests',
+        component: () => import('@/views/refund-requests/index.vue'),
+        meta: { title: '退款仲裁', icon: 'Refresh', group: '客服' },
+      },
       // 营销
       {
         path: 'activities',
