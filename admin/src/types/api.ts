@@ -32,6 +32,21 @@ export interface LoginResponse {
   perms?: string[]
   permissions?: string[]
   username?: string
+  // S4.3 — when true the FE must reLaunch to /security/password before any other nav.
+  passwordExpired?: boolean
+  // S4.1 — when true Token/RefreshToken are EMPTY; the FE must call mfaLogin
+  // with `challengeToken` + 6-digit code to mint the real session.
+  mfaRequired?: boolean
+  challengeToken?: string
+}
+
+export interface MfaLoginRequest {
+  challengeToken: string
+  code: string
+}
+
+export interface MfaSmsSendRequest {
+  challengeToken: string
 }
 
 export interface RefreshResponse {

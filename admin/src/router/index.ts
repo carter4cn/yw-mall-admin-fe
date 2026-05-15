@@ -122,6 +122,39 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/accounts/index.vue'),
         meta: { title: '账号管理', icon: 'UserFilled', group: '系统' },
       },
+      // 安全 (Sprint 4)
+      {
+        path: 'security/mfa',
+        name: 'SecurityMfa',
+        component: () => import('@/views/security/mfa/index.vue'),
+        meta: { title: 'MFA 设置', icon: 'Key', group: '安全' },
+      },
+      {
+        path: 'security/password',
+        name: 'SecurityPassword',
+        component: () => import('@/views/security/password/index.vue'),
+        meta: { title: '修改密码', icon: 'Lock', group: '安全' },
+      },
+      {
+        path: 'security/ip-whitelist',
+        name: 'SecurityIpWhitelist',
+        component: () => import('@/views/security/ip-whitelist/index.vue'),
+        meta: { title: 'IP 白名单', icon: 'Coordinate', group: '安全' },
+      },
+      // 用户实名
+      {
+        path: 'users/kyc',
+        name: 'UsersKyc',
+        component: () => import('@/views/users/kyc/index.vue'),
+        meta: { title: 'KYC 审核', icon: 'Postcard', group: '运营' },
+      },
+      // 审计
+      {
+        path: 'op-log',
+        name: 'OpLog',
+        component: () => import('@/views/op-log/index.vue'),
+        meta: { title: '操作日志', icon: 'Document', group: '审计' },
+      },
     ],
   },
   {

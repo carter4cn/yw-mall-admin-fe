@@ -1,21 +1,38 @@
 import { post } from './request'
-import type { LoginRequest, LoginResponse, RefreshResponse, ApiResponse } from '@/types/api'
+import type {
+  LoginRequest,
+  LoginResponse,
+  RefreshResponse,
+  ApiResponse,
+  MfaLoginRequest,
+  MfaSmsSendRequest,
+} from '@/types/api'
+
+function unwrap<T>(body: ApiResponse<T> & T): T {
+  if (body && (body as ApiResponse<T>).data) {
+    return (body as ApiResponse<T>).data as T
+  }
+  return body as unknown as T
+}
 
 export async function login(req: LoginRequest): Promise<LoginResponse> {
   const body = await post<ApiResponse<LoginResponse> & LoginResponse>('/login', req)
-  // Backend may return {code,data:{...}} or flat fields; support both
-  if (body && (body as ApiResponse<LoginResponse>).data) {
-    return (body as ApiResponse<LoginResponse>).data as LoginResponse
-  }
-  return body as unknown as LoginResponse
+  return unwrap<LoginResponse>(body)
+}
+
+export async function mfaLogin(req: MfaLoginRequest): Promise<LoginResponse> {
+  const body = await post<ApiResponse<LoginResponse> & LoginResponse>('/login/mfa', req)
+  return unwrap<LoginResponse>(body)
+}
+
+export async function mfaSmsSend(req: MfaSmsSendRequest): Promise<{ ok: boolean }> {
+  const body = await post<ApiResponse<{ ok: boolean }> & { ok: boolean }>('/login/mfa/sms-send', req)
+  return unwrap<{ ok: boolean }>(body)
 }
 
 export async function refresh(refreshToken: string): Promise<RefreshResponse> {
   const body = await post<ApiResponse<RefreshResponse> & RefreshResponse>('/refresh', { refreshToken })
-  if (body && (body as ApiResponse<RefreshResponse>).data) {
-    return (body as ApiResponse<RefreshResponse>).data as RefreshResponse
-  }
-  return body as unknown as RefreshResponse
+  return unwrap<RefreshResponse>(body)
 }
 
 export async function logout(): Promise<void> {
