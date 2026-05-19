@@ -5,3 +5,6 @@ dist
 *.log
 .vscode/
 .idea/
+
+# OMC local state (do not commit)
+.omc/
